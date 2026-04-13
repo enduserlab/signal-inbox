@@ -1,0 +1,10 @@
+{
+	"id": "signal-inbox",
+	"name": "Signal Inbox",
+	"version": "0.1.0",
+	"minAppVersion": "1.5.0",
+	"description": "Smart inbox that watches a folder for incoming messages, auto-classifies them with Claude, and files them into your wiki.",
+	"author": "End User",
+	"authorUrl": "https://enduser.dev",
+	"isDesktopOnly": true
+}
