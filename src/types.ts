@@ -62,6 +62,8 @@ export interface ClassifiedMessage extends InboxMessage {
 		description: string;
 		siteName: string;
 	}>;
+	/** Short topic label for filenames (e.g. "auth service PR") */
+	topic: string;
 }
 
 /**
@@ -82,12 +84,20 @@ export interface SignalInboxSettings {
 	autoFile: boolean;
 	/** Whether to fetch URL content for richer classification */
 	fetchUrls: boolean;
+	/** Minimum confidence to auto-file (below this, messages go to archive instead) */
+	confidenceThreshold: number;
+	/** Maximum API calls per day (0 = unlimited) */
+	dailyApiLimit: number;
 	/** Polling interval in seconds for checking new files */
 	pollIntervalSeconds: number;
 	/** Category-to-folder mapping: where each category gets filed */
 	categoryFolders: Record<MessageCategory, string>;
 	/** Custom classification prompt override */
 	classificationPrompt: string;
+	/** Internal: API calls made today */
+	_apiCallsToday: number;
+	/** Internal: date string for API call tracking (YYYY-MM-DD) */
+	_apiCallsDate: string;
 }
 
 export const DEFAULT_SETTINGS: SignalInboxSettings = {
@@ -98,6 +108,8 @@ export const DEFAULT_SETTINGS: SignalInboxSettings = {
 	autoClassify: true,
 	autoFile: false,
 	fetchUrls: true,
+	confidenceThreshold: 0.6,
+	dailyApiLimit: 100,
 	pollIntervalSeconds: 10,
 	categoryFolders: {
 		article: "wiki/sources",
@@ -110,4 +122,6 @@ export const DEFAULT_SETTINGS: SignalInboxSettings = {
 		unclassified: "inbox/unclassified",
 	},
 	classificationPrompt: "",
+	_apiCallsToday: 0,
+	_apiCallsDate: "",
 };

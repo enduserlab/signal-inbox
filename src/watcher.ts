@@ -9,6 +9,12 @@ import { classifyMessage } from "./classifier";
 /** Minimum age in ms before a file is considered stable enough to process. */
 const FILE_SETTLE_MS = 2000;
 
+/** Callback for status bar updates. */
+export type StatusCallback = (status: string) => void;
+
+/** Callback to persist API call count. */
+export type SaveSettingsCallback = () => Promise<void>;
+
 /**
  * Watches the inbox folder for new files, classifies them,
  * and files them into the appropriate wiki locations.
@@ -19,6 +25,9 @@ export class InboxWatcher {
 	private pollInterval: number | null = null;
 	private processedFiles: Set<string> = new Set();
 	private processing: boolean = false;
+	private statusCb: StatusCallback = () => {};
+	private saveCb: SaveSettingsCallback = async () => {};
+	private sessionProcessed: number = 0;
 
 	constructor(app: App, settings: SignalInboxSettings) {
 		this.app = app;
@@ -29,60 +38,104 @@ export class InboxWatcher {
 		this.settings = settings;
 	}
 
+	onStatus(cb: StatusCallback): void {
+		this.statusCb = cb;
+	}
+
+	onSave(cb: SaveSettingsCallback): void {
+		this.saveCb = cb;
+	}
+
 	/**
 	 * Start watching the inbox folder.
 	 */
 	async start(): Promise<void> {
-		// Ensure inbox and archive folders exist
 		await this.ensureFolder(this.settings.inboxPath);
 		await this.ensureFolder(this.settings.archivePath);
-
-		// Build initial set of already-processed files
 		await this.scanExisting();
 
-		// Start polling
 		this.pollInterval = window.setInterval(
 			() => this.poll(),
 			this.settings.pollIntervalSeconds * 1000
 		);
 
+		this.statusCb(`Watching (${this.sessionProcessed} processed)`);
 		console.log(
 			`Signal Inbox: Watching ${this.settings.inboxPath} every ${this.settings.pollIntervalSeconds}s`
 		);
 	}
 
-	/**
-	 * Stop watching.
-	 */
 	stop(): void {
 		if (this.pollInterval !== null) {
 			window.clearInterval(this.pollInterval);
 			this.pollInterval = null;
 		}
+		this.statusCb("Stopped");
 		console.log("Signal Inbox: Watcher stopped");
 	}
 
-	/**
-	 * Restart the watcher (e.g. after settings change).
-	 */
 	async restart(): Promise<void> {
 		this.stop();
 		this.processedFiles.clear();
 		await this.start();
 	}
 
-	/**
-	 * Trigger a single poll without resetting state.
-	 * Used by "Process now" command / ribbon icon.
-	 */
 	async processNow(): Promise<void> {
 		await this.poll();
 	}
 
 	/**
-	 * Scan existing inbox files so we don't re-process them on startup.
-	 * Files that already have classification metadata are marked as processed.
-	 * Unclassified files are left for the next poll to pick up.
+	 * Re-classify a specific file. Strips existing classification
+	 * and runs it through the pipeline again.
+	 */
+	async reclassifyFile(file: TFile): Promise<void> {
+		const content = await this.app.vault.read(file);
+		const body = this.stripFrontmatter(content);
+		const fm = this.parseFrontmatter(content);
+
+		// Remove existing classification fields
+		for (const key of Object.keys(fm)) {
+			if (key.startsWith("signal-inbox-")) {
+				delete fm[key];
+			}
+		}
+
+		// Rebuild clean content
+		const cleanContent = Object.keys(fm).length > 0
+			? `---\n${Object.entries(fm).map(([k, v]) => `${k}: ${this.yamlScalar(v)}`).join("\n")}\n---\n\n${body}`
+			: body;
+
+		const message: InboxMessage = {
+			filename: file.name,
+			filepath: file.path,
+			content: cleanContent,
+			frontmatter: fm,
+			receivedAt: new Date(file.stat.ctime),
+		};
+
+		if (!this.checkDailyLimit()) return;
+
+		this.statusCb("Re-classifying...");
+		const classified = await classifyMessage(message, this.settings);
+		await this.incrementApiCount();
+
+		// Write enriched content back in place (don't move)
+		const enrichedContent = this.buildEnrichedContent(classified);
+		const newName = this.buildFilename(classified);
+		const dir = file.parent?.path ?? "";
+		const newPath = this.deduplicatePath(dir, newName);
+
+		await this.app.vault.modify(file, enrichedContent);
+		if (newPath !== file.path) {
+			await this.app.vault.rename(file, newPath);
+		}
+
+		this.statusCb(`Watching (${this.sessionProcessed} processed)`);
+		new Notice(`Signal Inbox: Re-classified as ${classified.category} — "${classified.summary}"`);
+	}
+
+	/**
+	 * Scan existing inbox files. Already-classified files are marked processed.
 	 */
 	private async scanExisting(): Promise<void> {
 		const folder = this.app.vault.getAbstractFileByPath(
@@ -100,9 +153,6 @@ export class InboxWatcher {
 		}
 	}
 
-	/**
-	 * Check for new files in the inbox.
-	 */
 	private async poll(): Promise<void> {
 		if (this.processing) return;
 		this.processing = true;
@@ -111,10 +161,7 @@ export class InboxWatcher {
 			const folder = this.app.vault.getAbstractFileByPath(
 				normalizePath(this.settings.inboxPath)
 			);
-
-			if (!(folder instanceof TFolder)) {
-				return;
-			}
+			if (!(folder instanceof TFolder)) return;
 
 			const now = Date.now();
 			const newFiles: TFile[] = [];
@@ -143,14 +190,10 @@ export class InboxWatcher {
 		}
 	}
 
-	/**
-	 * Process a single inbox file: parse, classify, and file it.
-	 */
 	private async processFile(file: TFile): Promise<void> {
 		try {
 			const content = await this.app.vault.read(file);
 
-			// Skip files that were already classified (e.g. moved back to inbox)
 			if (this.isAlreadyClassified(content)) {
 				this.processedFiles.add(file.path);
 				return;
@@ -167,20 +210,32 @@ export class InboxWatcher {
 			};
 
 			if (this.settings.autoClassify) {
+				if (!this.checkDailyLimit()) {
+					this.processedFiles.add(file.path);
+					return;
+				}
+
+				this.statusCb("Classifying...");
 				const classified = await classifyMessage(message, this.settings);
+				await this.incrementApiCount();
+				this.sessionProcessed++;
+
 				await this.fileMessage(classified, file);
+				this.statusCb(`Watching (${this.sessionProcessed} processed)`);
 			}
 
 			this.processedFiles.add(file.path);
 		} catch (error) {
 			console.error(`Signal Inbox: Error processing ${file.name}:`, error);
 			this.processedFiles.add(file.path);
+			this.statusCb(`Error — ${this.sessionProcessed} processed`);
 		}
 	}
 
 	/**
-	 * File a classified message into the appropriate folder.
-	 * Adds classification metadata to frontmatter and moves the file.
+	 * File a classified message. Respects confidence threshold:
+	 * - Above threshold + autoFile → category folder
+	 * - Below threshold or !autoFile → archive
 	 */
 	private async fileMessage(
 		classified: ClassifiedMessage,
@@ -188,49 +243,106 @@ export class InboxWatcher {
 	): Promise<void> {
 		const enrichedContent = this.buildEnrichedContent(classified);
 		const oldPath = originalFile.path;
+		const newFilename = this.buildFilename(classified);
 
-		if (this.settings.autoFile) {
-			// Auto-file: enrich and move to category folder
+		const aboveThreshold = classified.confidence >= this.settings.confidenceThreshold;
+
+		if (this.settings.autoFile && aboveThreshold) {
 			const destFolder = normalizePath(classified.suggestedPath);
 			await this.ensureFolder(destFolder);
-			const destPath = this.deduplicatePath(destFolder, originalFile.name);
+			const destPath = this.deduplicatePath(destFolder, newFilename);
 
 			await this.app.vault.modify(originalFile, enrichedContent);
 			await this.app.vault.rename(originalFile, destPath);
-
-			// Clean up old path so a new file with the same name gets processed
 			this.processedFiles.delete(oldPath);
 
-			new Notice(
-				`Signal Inbox: Filed "${classified.summary}" -> ${classified.category}`
-			);
+			new Notice(`Signal Inbox: Filed "${classified.summary}" → ${classified.category}`);
 		} else {
-			// No auto-file: enrich and move to archive (out of inbox)
 			const archiveFolder = normalizePath(this.settings.archivePath);
 			await this.ensureFolder(archiveFolder);
-			const destPath = this.deduplicatePath(archiveFolder, originalFile.name);
+			const destPath = this.deduplicatePath(archiveFolder, newFilename);
 
 			await this.app.vault.modify(originalFile, enrichedContent);
 			await this.app.vault.rename(originalFile, destPath);
-
 			this.processedFiles.delete(oldPath);
 
-			new Notice(
-				`Signal Inbox: Classified "${classified.summary}" as ${classified.category} (in archive)`
-			);
+			if (this.settings.autoFile && !aboveThreshold) {
+				new Notice(
+					`Signal Inbox: Low confidence (${(classified.confidence * 100).toFixed(0)}%) — "${classified.summary}" sent to archive for review`
+				);
+			} else {
+				new Notice(
+					`Signal Inbox: Classified "${classified.summary}" as ${classified.category} (in archive)`
+				);
+			}
 		}
 	}
 
+	// --- Filename ---
+
 	/**
-	 * Check whether content already has signal-inbox classification metadata.
+	 * Build a human-readable filename: "Sender - 2026-04-12 - Topic.md"
 	 */
+	private buildFilename(classified: ClassifiedMessage): string {
+		const sender = this.cleanForFilename(
+			String(classified.frontmatter.sender ?? classified.frontmatter.source ?? "Unknown")
+		);
+
+		const date = classified.receivedAt.toISOString().slice(0, 10); // YYYY-MM-DD
+
+		const topic = classified.topic
+			? this.cleanForFilename(classified.topic)
+			: this.cleanForFilename(classified.summary.slice(0, 40));
+
+		return `${sender} - ${date} - ${topic}.md`;
+	}
+
+	private cleanForFilename(str: string): string {
+		return str
+			.replace(/[\\/:*?"<>|]/g, "")
+			.replace(/\s+/g, " ")
+			.trim()
+			.slice(0, 50);
+	}
+
+	// --- API limit tracking ---
+
+	private checkDailyLimit(): boolean {
+		if (this.settings.dailyApiLimit <= 0) return true; // 0 = unlimited
+
+		const today = new Date().toISOString().slice(0, 10);
+		if (this.settings._apiCallsDate !== today) {
+			// New day — reset counter
+			this.settings._apiCallsToday = 0;
+			this.settings._apiCallsDate = today;
+		}
+
+		if (this.settings._apiCallsToday >= this.settings.dailyApiLimit) {
+			new Notice(
+				`Signal Inbox: Daily API limit reached (${this.settings.dailyApiLimit}). Messages will be processed tomorrow or increase the limit in settings.`
+			);
+			return false;
+		}
+
+		return true;
+	}
+
+	private async incrementApiCount(): Promise<void> {
+		const today = new Date().toISOString().slice(0, 10);
+		if (this.settings._apiCallsDate !== today) {
+			this.settings._apiCallsToday = 0;
+			this.settings._apiCallsDate = today;
+		}
+		this.settings._apiCallsToday++;
+		await this.saveCb();
+	}
+
+	// --- Frontmatter ---
+
 	private isAlreadyClassified(content: string): boolean {
 		return /^signal-inbox-category:/m.test(content);
 	}
 
-	/**
-	 * Build markdown content with classification metadata in frontmatter.
-	 */
 	private buildEnrichedContent(classified: ClassifiedMessage): string {
 		const body = this.stripFrontmatter(classified.content);
 
@@ -238,6 +350,7 @@ export class InboxWatcher {
 			...classified.frontmatter,
 			"signal-inbox-category": classified.category,
 			"signal-inbox-summary": classified.summary,
+			"signal-inbox-topic": classified.topic,
 			"signal-inbox-tags": classified.tags,
 			"signal-inbox-confidence": classified.confidence,
 			"signal-inbox-priority": classified.priority,
@@ -272,14 +385,10 @@ export class InboxWatcher {
 		return `---\n${yamlLines.join("\n")}\n---\n\n${body}`;
 	}
 
-	/**
-	 * Safely encode a value as a YAML scalar.
-	 */
 	private yamlScalar(value: unknown): string {
 		if (value === null || value === undefined) return '""';
 		if (typeof value === "number" || typeof value === "boolean") return String(value);
 		const str = String(value);
-		// Quote strings that contain YAML-special characters or could be misinterpreted
 		if (
 			str === "" ||
 			str === "true" || str === "false" ||
@@ -294,9 +403,6 @@ export class InboxWatcher {
 		return str;
 	}
 
-	/**
-	 * Parse YAML frontmatter from markdown content.
-	 */
 	private parseFrontmatter(content: string): Record<string, unknown> {
 		const match = content.match(/^---\n([\s\S]*?)\n---/);
 		if (!match) return {};
@@ -307,14 +413,12 @@ export class InboxWatcher {
 		let currentArray: string[] | null = null;
 
 		for (const line of lines) {
-			// Array continuation: "  - value"
 			if (/^\s+-\s/.test(line) && currentArray !== null) {
 				const val = line.replace(/^\s+-\s*/, "").replace(/^["']|["']$/g, "");
 				currentArray.push(val);
 				continue;
 			}
 
-			// Flush any pending array
 			if (currentArray !== null) {
 				result[currentKey] = currentArray;
 				currentArray = null;
@@ -327,7 +431,6 @@ export class InboxWatcher {
 			const rawValue = line.slice(colonIndex + 1).trim();
 
 			if (rawValue === "" || rawValue === "[]") {
-				// Could be start of an array block, or empty value
 				currentKey = key;
 				currentArray = rawValue === "[]" ? null : [];
 				if (rawValue === "[]") result[key] = [];
@@ -338,7 +441,6 @@ export class InboxWatcher {
 			result[key] = rawValue.replace(/^["']|["']$/g, "");
 		}
 
-		// Flush trailing array
 		if (currentArray !== null) {
 			result[currentKey] = currentArray;
 		}
@@ -346,16 +448,10 @@ export class InboxWatcher {
 		return result;
 	}
 
-	/**
-	 * Strip frontmatter from markdown content, returning just the body.
-	 */
 	private stripFrontmatter(content: string): string {
 		return content.replace(/^---\n[\s\S]*?\n---\n*/, "").trim();
 	}
 
-	/**
-	 * Generate a destination path, adding a numeric suffix if a file already exists.
-	 */
 	private deduplicatePath(folder: string, filename: string): string {
 		const base = filename.replace(/\.md$/, "");
 		let candidate = normalizePath(`${folder}/${filename}`);
@@ -367,9 +463,6 @@ export class InboxWatcher {
 		return candidate;
 	}
 
-	/**
-	 * Ensure a folder exists in the vault, creating it recursively if needed.
-	 */
 	private async ensureFolder(path: string): Promise<void> {
 		const normalized = normalizePath(path);
 		const existing = this.app.vault.getAbstractFileByPath(normalized);
