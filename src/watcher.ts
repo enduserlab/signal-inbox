@@ -60,9 +60,6 @@ export class InboxWatcher {
 		);
 
 		this.statusCb(`Watching (${this.sessionProcessed} processed)`);
-		console.log(
-			`Signal Inbox: Watching ${this.settings.inboxPath} every ${this.settings.pollIntervalSeconds}s`
-		);
 	}
 
 	stop(): void {
@@ -71,7 +68,6 @@ export class InboxWatcher {
 			this.pollInterval = null;
 		}
 		this.statusCb("Stopped");
-		console.log("Signal Inbox: Watcher stopped");
 	}
 
 	async restart(): Promise<void> {

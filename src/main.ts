@@ -124,11 +124,10 @@ export default class SignalInboxPlugin extends Plugin {
 		// Settings tab
 		this.addSettingTab(new SignalInboxSettingTab(this.app, this));
 
-		console.log("Signal Inbox plugin loaded");
 	}
 
 	onunload(): void {
-		console.log("Signal Inbox plugin unloaded");
+		// Cleanup handled by this.register() callbacks
 	}
 
 	async loadSettings(): Promise<void> {

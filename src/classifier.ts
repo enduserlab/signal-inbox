@@ -89,7 +89,7 @@ export async function classifyMessage(
 	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
 		if (attempt > 0) {
 			const delay = RETRY_BASE_MS * Math.pow(2, attempt - 1);
-			console.log(`Signal Inbox: Retry ${attempt}/${MAX_RETRIES} in ${delay}ms...`);
+			console.warn(`Signal Inbox: Retry ${attempt}/${MAX_RETRIES} in ${delay}ms...`);
 			await sleep(delay);
 		}
 

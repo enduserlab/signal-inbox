@@ -3,12 +3,12 @@ import type SignalInboxPlugin from "./main";
 import type { MessageCategory } from "./types";
 
 const CATEGORY_LABELS: Record<MessageCategory, string> = {
-	article: "Articles & Links",
+	article: "Articles & links",
 	question: "Questions",
-	task: "Tasks & Action Items",
+	task: "Tasks & action items",
 	update: "Updates & FYIs",
-	reference: "References & Docs",
-	idea: "Ideas & Brainstorms",
+	reference: "References & docs",
+	idea: "Ideas & brainstorms",
 	conversation: "Conversations",
 	unclassified: "Unclassified",
 };
@@ -26,10 +26,10 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		// --- Claude API ---
-		containerEl.createEl("h2", { text: "Claude API" });
+		new Setting(containerEl).setName("Claude API").setHeading();
 
 		new Setting(containerEl)
-			.setName("API Key")
+			.setName("API key")
 			.setDesc("Your Anthropic API key for message classification.")
 			.addText((text) => {
 				text
@@ -75,8 +75,8 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// --- Inbox Paths ---
-		containerEl.createEl("h2", { text: "Inbox Paths" });
+		// --- Inbox paths ---
+		new Setting(containerEl).setName("Inbox paths").setHeading();
 
 		new Setting(containerEl)
 			.setName("Inbox folder")
@@ -107,7 +107,7 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 			);
 
 		// --- Behavior ---
-		containerEl.createEl("h2", { text: "Behavior" });
+		new Setting(containerEl).setName("Behavior").setHeading();
 
 		new Setting(containerEl)
 			.setName("Auto-classify")
@@ -179,12 +179,11 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// --- Category Folders ---
-		containerEl.createEl("h2", { text: "Category Folders" });
-		containerEl.createEl("p", {
-			text: "Where each message category gets filed. Paths are relative to your vault root.",
-			cls: "setting-item-description",
-		});
+		// --- Category folders ---
+		new Setting(containerEl).setName("Category folders").setHeading();
+
+		new Setting(containerEl)
+			.setDesc("Where each message category gets filed. Paths are relative to your vault root.");
 
 		const categories = Object.keys(CATEGORY_LABELS) as MessageCategory[];
 		for (const category of categories) {
@@ -201,7 +200,7 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 		}
 
 		// --- Advanced ---
-		containerEl.createEl("h2", { text: "Advanced" });
+		new Setting(containerEl).setName("Advanced").setHeading();
 
 		new Setting(containerEl)
 			.setName("Custom classification prompt")

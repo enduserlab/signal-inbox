@@ -2,7 +2,7 @@
 
 An Obsidian plugin that watches an inbox folder for incoming messages, auto-classifies them using Claude, and files them into your knowledge base.
 
-Designed as the first piece of a self-hosted AI second brain. Works standalone or with the **[signal-bridge](https://github.com/danielquinn/signal-bridge)** companion service for automatic Signal message capture.
+Designed as the first piece of a self-hosted AI second brain. Works standalone or with the **[signal-bridge](https://github.com/enduserlab/signal-bridge)** companion service for automatic Signal message capture.
 
 ## How it works
 
@@ -118,7 +118,7 @@ signal-inbox-classified: "2026-04-12T20:00:05.000Z"
 
 ## Signal Bridge (companion service)
 
-The [signal-bridge](https://github.com/danielquinn/signal-bridge) is a separate Node.js service that receives Signal messages via signal-cli and writes them into your vault's inbox folder. It also supports bidirectional commands — text `/help` to yourself on Signal to interact with your knowledge base.
+The [signal-bridge](https://github.com/enduserlab/signal-bridge) is a separate Node.js service that receives Signal messages via signal-cli and writes them into your vault's inbox folder. It also supports bidirectional commands — text `/help` to yourself on Signal to interact with your knowledge base.
 
 ## Development
 
