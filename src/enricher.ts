@@ -12,9 +12,6 @@ export interface UrlMeta {
 	error?: string;
 }
 
-/** Max time to spend fetching a single URL (ms). */
-const FETCH_TIMEOUT_MS = 8000;
-
 /** Max body size to parse (bytes). */
 const MAX_BODY_BYTES = 200_000;
 

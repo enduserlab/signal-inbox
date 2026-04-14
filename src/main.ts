@@ -14,12 +14,12 @@ export default class SignalInboxPlugin extends Plugin {
 
 		// Status bar
 		this.statusBarEl = this.addStatusBarItem();
-		this.statusBarEl.setText("Signal Inbox: Starting...");
+		this.statusBarEl.setText("Starting...");
 
 		// Start the inbox watcher
 		this.watcher = new InboxWatcher(this.app, this.settings);
 		this.watcher.onStatus((status) => {
-			this.statusBarEl?.setText(`Signal Inbox: ${status}`);
+			this.statusBarEl?.setText(status);
 		});
 		this.watcher.onSave(() => this.saveSettings());
 		await this.watcher.start();
@@ -28,14 +28,14 @@ export default class SignalInboxPlugin extends Plugin {
 		this.register(() => this.watcher?.stop());
 
 		// Ribbon icon for manual processing
-		this.addRibbonIcon("inbox", "Signal Inbox: Process now", async () => {
+		this.addRibbonIcon("inbox", "Process inbox now", async () => {
 			if (!this.settings.claudeApiKey) {
 				new Notice(
-					"Signal Inbox: Please set your Claude API key in settings."
+					"Please set your API key in settings."
 				);
 				return;
 			}
-			new Notice("Signal Inbox: Checking for new messages...");
+			new Notice("Checking for new messages...");
 			await this.watcher?.processNow();
 		});
 
@@ -47,11 +47,11 @@ export default class SignalInboxPlugin extends Plugin {
 			callback: async () => {
 				if (!this.settings.claudeApiKey) {
 					new Notice(
-						"Signal Inbox: Please set your Claude API key in settings."
+						"Please set your API key in settings."
 					);
 					return;
 				}
-				new Notice("Signal Inbox: Processing inbox...");
+				new Notice("Processing inbox...");
 				await this.watcher?.processNow();
 			},
 		});
@@ -65,12 +65,12 @@ export default class SignalInboxPlugin extends Plugin {
 				if (checking) return true;
 
 				if (!this.settings.claudeApiKey) {
-					new Notice("Signal Inbox: Please set your Claude API key in settings.");
+					new Notice("Please set your API key in settings.");
 					return true;
 				}
 
-				new Notice("Signal Inbox: Re-classifying...");
-				this.watcher?.reclassifyFile(file);
+				new Notice("Re-classifying...");
+				void this.watcher?.reclassifyFile(file);
 				return true;
 			},
 		});
@@ -107,14 +107,14 @@ export default class SignalInboxPlugin extends Plugin {
 
 				menu.addItem((item) => {
 					item
-						.setTitle("Signal Inbox: Re-classify")
+						.setTitle("Re-classify")
 						.setIcon("refresh-cw")
 						.onClick(async () => {
 							if (!this.settings.claudeApiKey) {
-								new Notice("Signal Inbox: Please set your Claude API key in settings.");
+								new Notice("Please set your API key in settings.");
 								return;
 							}
-							new Notice("Signal Inbox: Re-classifying...");
+							new Notice("Re-classifying...");
 							await this.watcher?.reclassifyFile(file);
 						});
 				});

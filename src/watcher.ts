@@ -55,7 +55,7 @@ export class InboxWatcher {
 		await this.scanExisting();
 
 		this.pollInterval = window.setInterval(
-			() => this.poll(),
+			() => { void this.poll(); },
 			this.settings.pollIntervalSeconds * 1000
 		);
 
@@ -280,8 +280,9 @@ export class InboxWatcher {
 	 * Build a human-readable filename: "Sender - 2026-04-12 - Topic.md"
 	 */
 	private buildFilename(classified: ClassifiedMessage): string {
+		const rawSender = classified.frontmatter.sender ?? classified.frontmatter.source ?? "Unknown";
 		const sender = this.cleanForFilename(
-			String(classified.frontmatter.sender ?? classified.frontmatter.source ?? "Unknown")
+			typeof rawSender === "string" ? rawSender : "Unknown"
 		);
 
 		const date = classified.receivedAt.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -384,13 +385,14 @@ export class InboxWatcher {
 	private yamlScalar(value: unknown): string {
 		if (value === null || value === undefined) return '""';
 		if (typeof value === "number" || typeof value === "boolean") return String(value);
-		const str = String(value);
+		if (typeof value !== "string") return '""';
+		const str = value;
 		if (
 			str === "" ||
 			str === "true" || str === "false" ||
 			str === "null" || str === "~" ||
 			/^[\d.eE+-]+$/.test(str) ||
-			/[:#\[\]{}&*!|>'"%@`,?]/.test(str) ||
+			/[:#[\]{}&*!|>'"%@`,?]/.test(str) ||
 			str.startsWith("- ") ||
 			str !== str.trim()
 		) {

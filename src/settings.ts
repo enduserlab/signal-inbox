@@ -30,10 +30,10 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("API key")
-			.setDesc("Your Anthropic API key for message classification.")
+			.setDesc("API key for message classification.")
 			.addText((text) => {
 				text
-					.setPlaceholder("sk-ant-...")
+					.setPlaceholder("Enter API key")
 					.setValue(this.plugin.settings.claudeApiKey)
 					.onChange(async (value) => {
 						this.plugin.settings.claudeApiKey = value;
@@ -48,8 +48,8 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 			.setDesc("Claude model to use for classification.")
 			.addDropdown((dropdown) =>
 				dropdown
-					.addOption("claude-sonnet-4-20250514", "Claude Sonnet 4")
-					.addOption("claude-haiku-4-5-20251001", "Claude Haiku 4.5 (faster, cheaper)")
+					.addOption("claude-sonnet-4-20250514", "Sonnet 4")
+					.addOption("claude-haiku-4-5-20251001", "Haiku 4.5 (faster, cheaper)")
 					.setValue(this.plugin.settings.claudeModel)
 					.onChange(async (value) => {
 						this.plugin.settings.claudeModel = value;
@@ -111,7 +111,7 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Auto-classify")
-			.setDesc("Automatically send new messages to Claude for classification.")
+			.setDesc("Automatically send new messages for classification.")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.autoClassify)
@@ -124,7 +124,7 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Fetch link content")
 			.setDesc(
-				"When a message contains URLs, fetch page titles and descriptions to give Claude richer context for classification."
+				"When a message contains URLs, fetch page titles and descriptions for richer classification context."
 			)
 			.addToggle((toggle) =>
 				toggle
@@ -216,9 +216,7 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 				text.inputEl.rows = 12;
-				text.inputEl.style.width = "100%";
-				text.inputEl.style.fontFamily = "monospace";
-				text.inputEl.style.fontSize = "12px";
+				text.inputEl.addClass("signal-inbox-prompt-textarea");
 			});
 	}
 }
