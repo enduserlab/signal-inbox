@@ -124,7 +124,7 @@ export class SignalInboxSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Fetch link content")
 			.setDesc(
-				"When a message contains URLs, fetch page titles and descriptions for richer classification context."
+				"Fetch page titles and descriptions for web links in the message."
 			)
 			.addToggle((toggle) =>
 				toggle
